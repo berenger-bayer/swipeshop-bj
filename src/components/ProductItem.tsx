@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Heart, ShoppingBag, Share2, Music2, ChevronLeft, ChevronRight, Volume2, VolumeX } from 'lucide-react'
+import { Heart, ShoppingBag, Share2, Music2, ChevronLeft, ChevronRight, Volume2, VolumeX, Check } from 'lucide-react'
 
 interface Product {
   id: string
@@ -32,23 +32,24 @@ export default function ProductItem({
   currentIndex,
   total,
 }: ProductItemProps) {
+  const BASE_LIKES = 12500
+  const [likeCount, setLikeCount] = useState(BASE_LIKES)
   const [liked, setLiked] = useState(false)
   const [likeAnim, setLikeAnim] = useState(false)
   const [muted, setMuted] = useState(true)
-  const [mediaIndex, setMediaIndex] = useState(0) // index image galerie
+  const [mediaIndex, setMediaIndex] = useState(0)
   const [showHeart, setShowHeart] = useState(false)
+  const [shared, setShared] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const touchStartX = useRef<number | null>(null)
 
-  // Toutes les médias (vidéo + images)
   const allMedia = [
     { type: 'video' as const, url: product.videoUrl },
     ...(product.images || []).map(img => ({ type: 'image' as const, url: img })),
   ]
   const currentMedia = allMedia[mediaIndex] ?? allMedia[0]
 
-  // Jouer/pauser la vidéo selon le slide actif
   useEffect(() => {
     if (!videoRef.current) return
     if (isActive && currentMedia.type === 'video') {
@@ -58,7 +59,6 @@ export default function ProductItem({
     }
   }, [isActive, currentMedia])
 
-  // Audio
   useEffect(() => {
     if (!audioRef.current) return
     if (isActive) {
@@ -69,12 +69,13 @@ export default function ProductItem({
     }
   }, [isActive])
 
-  // Reset media index quand on change de produit
   useEffect(() => {
     setMediaIndex(0)
+    // Reset like state per product (optionnel : persist via localStorage si besoin)
+    setLiked(false)
+    setLikeCount(BASE_LIKES)
   }, [product.id])
 
-  // Progress auto sur les médias (5s par image)
   useEffect(() => {
     if (!isActive || currentMedia.type === 'video') return
     const timer = setTimeout(() => {
@@ -83,25 +84,51 @@ export default function ProductItem({
     return () => clearTimeout(timer)
   }, [isActive, mediaIndex, currentMedia.type, allMedia.length])
 
-  // Double tap = like
   const lastTap = useRef(0)
-  const handleTap = (e: React.MouseEvent) => {
+  const handleTap = () => {
     const now = Date.now()
     if (now - lastTap.current < 300) {
-      handleLike()
+      triggerLike()
       setShowHeart(true)
       setTimeout(() => setShowHeart(false), 900)
     }
     lastTap.current = now
   }
 
-  const handleLike = () => {
-    setLiked(true)
+  const triggerLike = () => {
+    if (!liked) {
+      setLiked(true)
+      setLikeCount(c => c + 1)
+    } else {
+      setLiked(false)
+      setLikeCount(c => c - 1)
+    }
     setLikeAnim(true)
     setTimeout(() => setLikeAnim(false), 400)
   }
 
-  // Touch swipe gauche/droite entre produits
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const shareData = {
+      title: product.nom,
+      text: `🛍️ ${product.nom} — ${product.prixVente.toLocaleString('fr-FR')} FCFA\n${product.description}`,
+      url: window.location.href,
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else {
+        await navigator.clipboard.writeText(
+          `${shareData.title}\n${shareData.text}\n${shareData.url}`
+        )
+        setShared(true)
+        setTimeout(() => setShared(false), 2000)
+      }
+    } catch {
+      // user cancelled or error — silently ignore
+    }
+  }
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
   }
@@ -113,7 +140,6 @@ export default function ProductItem({
     touchStartX.current = null
   }
 
-  // Tap zone gauche/droite pour naviguer dans les médias du produit
   const handleZoneTap = (zone: 'left' | 'right') => {
     if (zone === 'left') {
       if (mediaIndex > 0) setMediaIndex(i => i - 1)
@@ -124,9 +150,38 @@ export default function ProductItem({
     }
   }
 
-  const waLink = `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(
-    `Bonjour ! Je suis intéressé(e) par *${product.nom}* à ${product.prixVente.toLocaleString('fr-FR')} FCFA. Est-ce disponible ?`
-  )}`
+  // ── Message WhatsApp détaillé ──
+  const formatLikeCount = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+    return n.toString()
+  }
+
+  const buildWaMessage = () => {
+    const lines: string[] = [
+      `Bonjour ! 👋`,
+      ``,
+      `Je suis intéressé(e) par le produit suivant :`,
+      ``,
+      `🛍️ *${product.nom}*`,
+      `💰 Prix : *${product.prixVente.toLocaleString('fr-FR')} FCFA*`,
+      ``,
+      `📄 Description :`,
+      product.description,
+    ]
+
+    if (product.features && product.features.length > 0) {
+      lines.push(``)
+      lines.push(`✅ Caractéristiques :`)
+      product.features.forEach(f => lines.push(`• ${f}`))
+    }
+
+    lines.push(``)
+    lines.push(`Est-ce que ce produit est disponible ? Merci !`)
+
+    return encodeURIComponent(lines.join('\n'))
+  }
+
+  const waLink = `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${buildWaMessage()}`
 
   return (
     <div
@@ -154,10 +209,8 @@ export default function ProductItem({
         />
       )}
 
-      {/* Gradient haut + bas */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent via-40% to-black/85 pointer-events-none z-10" />
 
-      {/* ── AUDIO ── */}
       {product.audioUrl && (
         <audio ref={audioRef} src={product.audioUrl} loop />
       )}
@@ -165,13 +218,12 @@ export default function ProductItem({
       {/* ── ZONES DE TAP GAUCHE / DROITE ── */}
       <div className="absolute inset-0 z-20 flex pointer-events-none">
         <div className="w-1/3 h-full pointer-events-auto" onClick={e => { e.stopPropagation(); handleZoneTap('left') }} />
-        <div className="w-1/3 h-full" /> {/* zone centrale = double-tap like */}
+        <div className="w-1/3 h-full" />
         <div className="w-1/3 h-full pointer-events-auto" onClick={e => { e.stopPropagation(); handleZoneTap('right') }} />
       </div>
 
-      {/* ── PROGRESS BARS (Stories) ── */}
+      {/* ── PROGRESS BARS ── */}
       <div className="absolute top-0 inset-x-0 z-30 px-3 pt-3 flex space-x-1">
-        {/* Barre par produit */}
         {Array.from({ length: total }).map((_, i) => (
           <div key={i} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden">
             <div
@@ -192,7 +244,7 @@ export default function ProductItem({
         ))}
       </div>
 
-      {/* ── HEADER (boutique) ── */}
+      {/* ── HEADER ── */}
       <div className="absolute top-10 left-4 right-4 z-30 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-black border border-white/30">
@@ -204,7 +256,6 @@ export default function ProductItem({
           </div>
         </div>
 
-        {/* Mute / Unmute */}
         <button
           onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
           className="w-8 h-8 rounded-full bg-black/40 backdrop-blur flex items-center justify-center border border-white/20"
@@ -228,12 +279,13 @@ export default function ProductItem({
         </div>
       )}
 
-      {/* ── BARRE DROITE (actions) ── */}
+      {/* ── BARRE DROITE ── */}
       <div className="absolute right-3 bottom-36 z-30 flex flex-col items-center gap-5">
-        {/* Like */}
+        {/* Like — toggle on/off */}
         <button
-          onClick={e => { e.stopPropagation(); handleLike() }}
+          onClick={e => { e.stopPropagation(); triggerLike() }}
           className="flex flex-col items-center gap-1"
+          aria-label={liked ? 'Retirer le like' : 'Liker'}
         >
           <div className={`transition-transform duration-200 ${likeAnim ? 'scale-150' : 'scale-100'}`}>
             <Heart
@@ -244,17 +296,27 @@ export default function ProductItem({
             />
           </div>
           <span className="text-white text-[10px] font-bold drop-shadow">
-            {liked ? '12.6K' : '12.5K'}
+            {formatLikeCount(likeCount)}
           </span>
         </button>
 
-        {/* Partager */}
+        {/* Partager — avec fallback clipboard */}
         <button
-          onClick={e => { e.stopPropagation(); navigator.share?.({ url: window.location.href }) }}
+          onClick={handleShare}
           className="flex flex-col items-center gap-1"
+          aria-label="Partager"
         >
-          <Share2 size={30} className="text-white drop-shadow" strokeWidth={2} />
-          <span className="text-white text-[10px] font-bold drop-shadow">Partager</span>
+          {shared ? (
+            <>
+              <Check size={30} className="text-green-400 drop-shadow" strokeWidth={2} />
+              <span className="text-green-400 text-[10px] font-bold drop-shadow">Copié !</span>
+            </>
+          ) : (
+            <>
+              <Share2 size={30} className="text-white drop-shadow" strokeWidth={2} />
+              <span className="text-white text-[10px] font-bold drop-shadow">Partager</span>
+            </>
+          )}
         </button>
 
         {/* Disque vinyle */}
@@ -267,9 +329,8 @@ export default function ProductItem({
         )}
       </div>
 
-      {/* ── INFOS PRODUIT (bas) ── */}
+      {/* ── INFOS PRODUIT ── */}
       <div className="absolute bottom-0 inset-x-0 z-30 px-4 pb-6 pt-12 bg-gradient-to-t from-black/90 to-transparent">
-        {/* Nom + prix */}
         <div className="flex items-end justify-between mb-2">
           <div className="flex-1 mr-4">
             <h2 className="text-white font-black text-lg leading-tight drop-shadow-lg line-clamp-1">
@@ -287,7 +348,6 @@ export default function ProductItem({
           </div>
         </div>
 
-        {/* Features */}
         {product.features && product.features.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
             {product.features.slice(0, 3).map((f, i) => (
@@ -301,7 +361,6 @@ export default function ProductItem({
           </div>
         )}
 
-        {/* Médias miniatures */}
         {allMedia.length > 1 && (
           <div className="flex gap-1.5 mb-3">
             {allMedia.map((m, i) => (
@@ -334,7 +393,6 @@ export default function ProductItem({
           Commander sur WhatsApp
         </a>
 
-        {/* Audio label */}
         {product.audioUrl && (
           <div className="flex items-center gap-1.5 mt-2.5">
             <Music2 size={11} className="text-white/60 shrink-0" />
@@ -343,7 +401,7 @@ export default function ProductItem({
         )}
       </div>
 
-      {/* ── FLÈCHES (desktop) ── */}
+      {/* ── FLÈCHES DESKTOP ── */}
       {onPrev && (
         <button
           onClick={e => { e.stopPropagation(); onPrev() }}
