@@ -262,7 +262,7 @@ export default function AdminPage() {
           </div>
           
           <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
-            <div className="flex bg-slate-100 dark:bg-slate-800/50 rounded-2xl p-1.5 shadow-inner">
+            <div className="flex bg-surface rounded-2xl p-1.5 shadow-inner border border-glass-border">
               {[
                 { id: 'produits', label: 'Produits', icon: <ShoppingBag size={14} /> },
                 { id: 'commandes', label: 'Commandes', icon: <Package size={14} /> },
@@ -271,7 +271,7 @@ export default function AdminPage() {
                 <button 
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as 'produits' | 'commandes' | 'settings')}
-                  className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-md' : 'text-slate-500 hover:text-indigo-500'}`}
+                  className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-background text-accent-indigo shadow-md' : 'text-card-text-muted hover:text-accent-indigo'}`}
                 >
                   {tab.icon}
                   <span>{tab.label}</span>

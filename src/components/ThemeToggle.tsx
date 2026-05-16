@@ -24,7 +24,7 @@ export function ThemeToggle() {
   ]
 
   return (
-    <div className="flex items-center p-1.5 glass-pro rounded-2xl border border-white/20 shadow-sm">
+    <div className="flex items-center p-1.5 glass-pro rounded-2xl border border-glass-border shadow-sm">
       {themes.map((t) => (
         <button
           key={t.id}
@@ -32,8 +32,8 @@ export function ThemeToggle() {
           className={`
             p-2 rounded-xl transition-all duration-300 flex items-center justify-center
             ${theme === t.id 
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-900/40' 
-              : 'text-slate-400 hover:text-indigo-500 hover:bg-white/50 dark:hover:bg-slate-800/50'}
+              ? 'bg-accent-indigo text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-900/40' 
+              : 'text-card-text-muted hover:text-accent-indigo hover:bg-surface'}
           `}
           title={t.label}
         >

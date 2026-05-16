@@ -29,40 +29,40 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 transition-colors duration-500">
+      <div className="max-w-md w-full bg-surface rounded-2xl shadow-2xl p-8 border border-glass-border">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-black italic">SWIPE SHOP</h1>
-          <p className="text-gray-500 text-sm mt-2 font-medium uppercase tracking-widest">Espace Administration</p>
+          <h1 className="text-3xl font-black text-foreground italic">SWIPE SHOP</h1>
+          <p className="text-card-text-muted text-sm mt-2 font-medium uppercase tracking-widest">Espace Administration</p>
         </div>
 
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-r-md text-sm">
+          <div className="bg-rose-50 border-l-4 border-rose-500 text-rose-700 p-4 mb-6 rounded-r-md text-sm">
             {error}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-700 uppercase">Adresse Email</label>
+            <label className="text-xs font-bold text-card-text-muted uppercase">Adresse Email</label>
             <input 
               type="email" 
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3 border-2 border-gray-100 rounded-xl focus:border-black outline-none transition-all"
+              className="w-full p-3 bg-background border-2 border-border-subtle rounded-xl focus:border-accent-indigo outline-none transition-all text-foreground"
               placeholder="admin@swipeshop.bj"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-700 uppercase">Mot de passe</label>
+            <label className="text-xs font-bold text-card-text-muted uppercase">Mot de passe</label>
             <input 
               type="password" 
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 border-2 border-gray-100 rounded-xl focus:border-black outline-none transition-all"
+              className="w-full p-3 bg-background border-2 border-border-subtle rounded-xl focus:border-accent-indigo outline-none transition-all text-foreground"
               placeholder="••••••••"
             />
           </div>
@@ -78,7 +78,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-400 mt-8">
+        <p className="text-center text-xs text-card-text-muted mt-8">
           &copy; 2026 SwipeShop Bénin. Tous droits réservés.
         </p>
       </div>

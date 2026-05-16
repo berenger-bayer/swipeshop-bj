@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --background: #fdfdfd;
+  --background: #ffffff;
   --foreground: #0f172a;
   --accent-indigo: #4f46e5;
   --accent-rose: #f43f5e;
-  --surface: #ffffff;
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(241, 245, 249, 0.8);
-  --card-text: #334155;
-  --card-text-muted: #64748b;
-  --border-subtle: #f1f5f9;
+  --surface: #f8fafc;
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --card-text: #0f172a;
+  --card-text-muted: #475569;
+  --border-subtle: #e2e8f0;
 }
 
 .dark {
@@ -86,12 +86,27 @@ p {
   border: 1px solid var(--glass-border);
 }
 
+.glass-soft {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+}
+
 .shadow-pro {
   box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.05);
 }
 
 .dark .shadow-pro {
   box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.shadow-soft {
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.03);
+}
+
+.dark .shadow-soft {
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
 }
 
 @keyframes heart-beat {
