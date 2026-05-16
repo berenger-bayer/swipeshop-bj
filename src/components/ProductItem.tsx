@@ -1,6 +1,25 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { Heart, ShoppingBag, Share2, Music2, ChevronLeft, ChevronRight, Volume2, VolumeX, Check } from 'lucide-react'
+import {
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  serverTimestamp,
+} from 'firebase/firestore'
+import { db } from '@/lib/firebase'
+
+function getVisitorId(): string {
+  if (typeof window === 'undefined') return 'ssr'
+  let id = localStorage.getItem('swipeshop_visitor_id')
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem('swipeshop_visitor_id', id)
+  }
+  return id
+}
 
 interface Product {
   id: string
@@ -40,9 +59,12 @@ export default function ProductItem({
   const [mediaIndex, setMediaIndex] = useState(0)
   const [showHeart, setShowHeart] = useState(false)
   const [shared, setShared] = useState(false)
+  const [dbReady, setDbReady] = useState(false)
+
   const audioRef = useRef<HTMLAudioElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const touchStartX = useRef<number | null>(null)
+  const viewTracked = useRef(false)
 
   const allMedia = [
     { type: 'video' as const, url: product.videoUrl },
@@ -50,6 +72,58 @@ export default function ProductItem({
   ]
   const currentMedia = allMedia[mediaIndex] ?? allMedia[0]
 
+  // ── Chargement initial + écoute temps réel des likes ──
+  useEffect(() => {
+    setDbReady(false)
+    setMediaIndex(0)
+    viewTracked.current = false
+
+    if (!db) {
+      setDbReady(true)
+      return
+    }
+
+    const visitorId  = getVisitorId()
+    const produitRef = doc(db, 'produits', product.id)
+    const myLikeRef  = doc(db, 'produits', product.id, 'likes', visitorId)
+
+    // Lit d'abord — n'initialise likeCount que s'il est absent
+    getDoc(produitRef).then(snap => {
+      if (snap.exists() && snap.data()?.likeCount === undefined) {
+        setDoc(produitRef, { likeCount: 0 }, { merge: true }).catch(() => {})
+      }
+    }).catch(() => {})
+
+    // Ce visiteur a-t-il déjà liké ?
+    getDoc(myLikeRef).then(snap => {
+      setLiked(snap.exists())
+      setDbReady(true)
+    }).catch(() => {
+      setDbReady(true)
+    })
+
+    // Compteur en temps réel
+    const unsub = onSnapshot(produitRef, snap => {
+      const count = snap.data()?.likeCount
+      if (typeof count === 'number') setLikeCount(BASE_LIKES + count)
+    }, () => {})
+
+    return () => unsub()
+  }, [product.id])
+
+  // ── Enregistrer la vue ──
+  useEffect(() => {
+    if (!isActive || viewTracked.current || !db) return
+    viewTracked.current = true
+    const visitorId = getVisitorId()
+    setDoc(
+      doc(db, 'produits', product.id, 'vues', visitorId),
+      { createdAt: serverTimestamp(), userAgent: navigator.userAgent },
+      { merge: true }
+    ).catch(() => {})
+  }, [isActive, product.id])
+
+  // ── Vidéo ──
   useEffect(() => {
     if (!videoRef.current) return
     if (isActive && currentMedia.type === 'video') {
@@ -59,6 +133,7 @@ export default function ProductItem({
     }
   }, [isActive, currentMedia])
 
+  // ── Audio ──
   useEffect(() => {
     if (!audioRef.current) return
     if (isActive) {
@@ -69,13 +144,7 @@ export default function ProductItem({
     }
   }, [isActive])
 
-  useEffect(() => {
-    setMediaIndex(0)
-    // Reset like state per product (optionnel : persist via localStorage si besoin)
-    setLiked(false)
-    setLikeCount(BASE_LIKES)
-  }, [product.id])
-
+  // ── Auto-avance images ──
   useEffect(() => {
     if (!isActive || currentMedia.type === 'video') return
     const timer = setTimeout(() => {
@@ -84,6 +153,7 @@ export default function ProductItem({
     return () => clearTimeout(timer)
   }, [isActive, mediaIndex, currentMedia.type, allMedia.length])
 
+  // ── Double tap ──
   const lastTap = useRef(0)
   const handleTap = () => {
     const now = Date.now()
@@ -95,18 +165,34 @@ export default function ProductItem({
     lastTap.current = now
   }
 
-  const triggerLike = () => {
-    if (!liked) {
-      setLiked(true)
-      setLikeCount(c => c + 1)
-    } else {
-      setLiked(false)
-      setLikeCount(c => c - 1)
-    }
+  // ── Toggle like — écrit uniquement dans la sous-collection publique ──
+  const triggerLike = async () => {
+    if (!dbReady || !db) return
+    const isNowLiked = !liked
+
+    // Optimistic UI
+    setLiked(isNowLiked)
     setLikeAnim(true)
+    setLikeCount(c => isNowLiked ? c + 1 : c - 1)
     setTimeout(() => setLikeAnim(false), 400)
+
+    const visitorId = getVisitorId()
+    const myLikeRef = doc(db, 'produits', product.id, 'likes', visitorId)
+
+    try {
+      if (isNowLiked) {
+        await setDoc(myLikeRef, { createdAt: serverTimestamp() })
+      } else {
+        await deleteDoc(myLikeRef)
+      }
+    } catch {
+      // Rollback
+      setLiked(!isNowLiked)
+      setLikeCount(c => isNowLiked ? c - 1 : c + 1)
+    }
   }
 
+  // ── Partage ──
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation()
     const shareData = {
@@ -118,17 +204,23 @@ export default function ProductItem({
       if (navigator.share) {
         await navigator.share(shareData)
       } else {
-        await navigator.clipboard.writeText(
-          `${shareData.title}\n${shareData.text}\n${shareData.url}`
-        )
+        await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`)
         setShared(true)
         setTimeout(() => setShared(false), 2000)
       }
+      if (db) {
+        const visitorId = getVisitorId()
+        setDoc(
+          doc(db, 'produits', product.id, 'partages', `${visitorId}_${Date.now()}`),
+          { createdAt: serverTimestamp(), visitorId }
+        ).catch(() => {})
+      }
     } catch {
-      // user cancelled or error — silently ignore
+      // silently ignore
     }
   }
 
+  // ── Swipe tactile ──
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
   }
@@ -150,7 +242,6 @@ export default function ProductItem({
     }
   }
 
-  // ── Message WhatsApp détaillé ──
   const formatLikeCount = (n: number) => {
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
     return n.toString()
@@ -168,17 +259,31 @@ export default function ProductItem({
       `📄 Description :`,
       product.description,
     ]
-
     if (product.features && product.features.length > 0) {
       lines.push(``)
       lines.push(`✅ Caractéristiques :`)
       product.features.forEach(f => lines.push(`• ${f}`))
     }
-
     lines.push(``)
     lines.push(`Est-ce que ce produit est disponible ? Merci !`)
-
     return encodeURIComponent(lines.join('\n'))
+  }
+
+  const handleWhatsAppClick = async () => {
+    try {
+      await fetch('/api/commandes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visitorId:  getVisitorId(),
+          productId:  product.id,
+          productNom: product.nom,
+          prixVente:  product.prixVente,
+        }),
+      })
+    } catch {
+      // silently ignore
+    }
   }
 
   const waLink = `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${buildWaMessage()}`
@@ -211,11 +316,9 @@ export default function ProductItem({
 
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent via-40% to-black/85 pointer-events-none z-10" />
 
-      {product.audioUrl && (
-        <audio ref={audioRef} src={product.audioUrl} loop />
-      )}
+      {product.audioUrl && <audio ref={audioRef} src={product.audioUrl} loop />}
 
-      {/* ── ZONES DE TAP GAUCHE / DROITE ── */}
+      {/* ── ZONES TAP ── */}
       <div className="absolute inset-0 z-20 flex pointer-events-none">
         <div className="w-1/3 h-full pointer-events-auto" onClick={e => { e.stopPropagation(); handleZoneTap('left') }} />
         <div className="w-1/3 h-full" />
@@ -228,11 +331,7 @@ export default function ProductItem({
           <div key={i} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
-                i < currentIndex
-                  ? 'w-full bg-white'
-                  : i === currentIndex
-                  ? 'bg-white'
-                  : 'w-0'
+                i < currentIndex ? 'w-full bg-white' : i === currentIndex ? 'bg-white' : 'w-0'
               }`}
               style={
                 i === currentIndex && isActive
@@ -255,15 +354,11 @@ export default function ProductItem({
             <p className="text-white/60 text-[10px] leading-none mt-0.5">SwipeShop Bénin</p>
           </div>
         </div>
-
         <button
           onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
           className="w-8 h-8 rounded-full bg-black/40 backdrop-blur flex items-center justify-center border border-white/20"
         >
-          {muted
-            ? <VolumeX size={14} className="text-white" />
-            : <Volume2 size={14} className="text-white" />
-          }
+          {muted ? <VolumeX size={14} className="text-white" /> : <Volume2 size={14} className="text-white" />}
         </button>
       </div>
 
@@ -280,49 +375,52 @@ export default function ProductItem({
       )}
 
       {/* ── BARRE DROITE ── */}
-      <div className="absolute right-3 bottom-36 z-30 flex flex-col items-center gap-5">
-        {/* Like — toggle on/off */}
+      <div className="absolute right-3 bottom-56 z-30 flex flex-col items-center gap-6">
+
+        {/* Like */}
         <button
           onClick={e => { e.stopPropagation(); triggerLike() }}
-          className="flex flex-col items-center gap-1"
+          className="flex flex-col items-center gap-[6px] w-12"
           aria-label={liked ? 'Retirer le like' : 'Liker'}
+          disabled={!dbReady}
         >
-          <div className={`transition-transform duration-200 ${likeAnim ? 'scale-150' : 'scale-100'}`}>
+          <div
+            className="w-12 h-12 flex items-center justify-center"
+            style={{ transform: likeAnim ? 'scale(1.35)' : 'scale(1)', transition: 'transform 0.2s ease' }}
+          >
             <Heart
-              size={32}
+              size={34}
               fill={liked ? '#fe2c55' : 'none'}
-              strokeWidth={2}
+              strokeWidth={liked ? 0 : 2}
               className={liked ? 'text-[#fe2c55]' : 'text-white drop-shadow'}
             />
           </div>
-          <span className="text-white text-[10px] font-bold drop-shadow">
+          <span className="text-white text-[11px] font-semibold drop-shadow text-center w-full leading-none">
             {formatLikeCount(likeCount)}
           </span>
         </button>
 
-        {/* Partager — avec fallback clipboard */}
+        {/* Partager */}
         <button
           onClick={handleShare}
-          className="flex flex-col items-center gap-1"
+          className="flex flex-col items-center gap-[6px] w-12"
           aria-label="Partager"
         >
-          {shared ? (
-            <>
-              <Check size={30} className="text-green-400 drop-shadow" strokeWidth={2} />
-              <span className="text-green-400 text-[10px] font-bold drop-shadow">Copié !</span>
-            </>
-          ) : (
-            <>
-              <Share2 size={30} className="text-white drop-shadow" strokeWidth={2} />
-              <span className="text-white text-[10px] font-bold drop-shadow">Partager</span>
-            </>
-          )}
+          <div className="w-12 h-12 flex items-center justify-center">
+            {shared
+              ? <Check size={34} strokeWidth={2} className="text-green-400 drop-shadow" />
+              : <Share2 size={34} strokeWidth={2} className="text-white drop-shadow" />
+            }
+          </div>
+          <span className={`text-[11px] font-semibold drop-shadow text-center w-full leading-none ${shared ? 'text-green-400' : 'text-white'}`}>
+            {shared ? 'Copié !' : 'Partager'}
+          </span>
         </button>
 
         {/* Disque vinyle */}
         {product.audioUrl && (
-          <div className="mt-1 animate-spin" style={{ animationDuration: '4s' }}>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-900 to-gray-700 border-4 border-gray-800 flex items-center justify-center shadow-xl">
+          <div className="w-12 h-12 flex items-center justify-center animate-spin" style={{ animationDuration: '4s' }}>
+            <div className="w-10 h-10 rounded-full bg-gray-900 border-4 border-gray-700 flex items-center justify-center">
               <Music2 size={13} className="text-white" />
             </div>
           </div>
@@ -351,10 +449,7 @@ export default function ProductItem({
         {product.features && product.features.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
             {product.features.slice(0, 3).map((f, i) => (
-              <span
-                key={i}
-                className="text-[10px] text-white/90 bg-white/15 backdrop-blur px-2 py-0.5 rounded-full border border-white/20 font-medium"
-              >
+              <span key={i} className="text-[10px] text-white/90 bg-white/15 backdrop-blur px-2 py-0.5 rounded-full border border-white/20 font-medium">
                 {f}
               </span>
             ))}
@@ -371,11 +466,10 @@ export default function ProductItem({
                   i === mediaIndex ? 'border-white scale-110' : 'border-white/30 opacity-60'
                 }`}
               >
-                {m.type === 'video' ? (
-                  <video src={m.url} className="w-full h-full object-cover" muted playsInline />
-                ) : (
-                  <img src={m.url} alt="" className="w-full h-full object-cover" />
-                )}
+                {m.type === 'video'
+                  ? <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                  : <img src={m.url} alt="" className="w-full h-full object-cover" />
+                }
               </button>
             ))}
           </div>
@@ -386,7 +480,7 @@ export default function ProductItem({
           href={waLink}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); handleWhatsAppClick() }}
           className="flex items-center justify-center gap-2 w-full bg-[#25D366] hover:bg-[#20bd5a] active:scale-95 text-white py-3.5 rounded-2xl font-black text-sm transition-all shadow-2xl"
         >
           <ShoppingBag size={18} />

@@ -30,12 +30,12 @@ async function getSettings() {
     const snap = await getDocs(collection(db, 'settings'))
     if (!snap.empty) return snap.docs[0].data() as { whatsappNumber: string; shopName: string }
   } catch {}
-  return { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
+  return { whatsappNumber: '+2290155063713', shopName: 'SwipeShop Bénin' }
 }
 
 export default async function Home() {
   let produits: ReturnType<typeof serializeProduct>[] = []
-  let settings = { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
+  let settings = { whatsappNumber: '+2290155063713', shopName: 'SwipeShop Bénin' }
 
   if (db) {
     try {
