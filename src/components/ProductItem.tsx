@@ -8,6 +8,7 @@ import {
   deleteDoc,
   onSnapshot,
   serverTimestamp,
+  increment,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
@@ -51,8 +52,7 @@ export default function ProductItem({
   currentIndex,
   total,
 }: ProductItemProps) {
-  const BASE_LIKES = 12500
-  const [likeCount, setLikeCount] = useState(BASE_LIKES)
+  const [likeCount, setLikeCount] = useState(0)
   const [liked, setLiked] = useState(false)
   const [likeAnim, setLikeAnim] = useState(false)
   const [muted, setMuted] = useState(true)
@@ -72,7 +72,7 @@ export default function ProductItem({
   ]
   const currentMedia = allMedia[mediaIndex] ?? allMedia[0]
 
-  // ── Chargement initial + écoute temps réel des likes ──
+  // ── Init : écoute temps réel likeCount + état like du visiteur ──
   useEffect(() => {
     setDbReady(false)
     setMediaIndex(0)
@@ -85,9 +85,9 @@ export default function ProductItem({
 
     const visitorId  = getVisitorId()
     const produitRef = doc(db, 'produits', product.id)
-    const myLikeRef  = doc(db, 'produits', product.id, 'likes', visitorId)
+    const myLikeRef  = doc(db, 'likes', `${product.id}_${visitorId}`)
 
-    // Lit d'abord — n'initialise likeCount que s'il est absent
+    // Initialise likeCount à 0 si absent
     getDoc(produitRef).then(snap => {
       if (snap.exists() && snap.data()?.likeCount === undefined) {
         setDoc(produitRef, { likeCount: 0 }, { merge: true }).catch(() => {})
@@ -95,23 +95,20 @@ export default function ProductItem({
     }).catch(() => {})
 
     // Ce visiteur a-t-il déjà liké ?
-    getDoc(myLikeRef).then(snap => {
-      setLiked(snap.exists())
-      setDbReady(true)
-    }).catch(() => {
-      setDbReady(true)
-    })
+    getDoc(myLikeRef)
+      .then(snap => { setLiked(snap.exists()); setDbReady(true) })
+      .catch(() => { setDbReady(true) })
 
-    // Compteur en temps réel
+    // Compteur temps réel
     const unsub = onSnapshot(produitRef, snap => {
       const count = snap.data()?.likeCount
-      if (typeof count === 'number') setLikeCount(BASE_LIKES + count)
+      if (typeof count === 'number') setLikeCount(count)
     }, () => {})
 
     return () => unsub()
   }, [product.id])
 
-  // ── Enregistrer la vue ──
+  // ── Vue ──
   useEffect(() => {
     if (!isActive || viewTracked.current || !db) return
     viewTracked.current = true
@@ -158,14 +155,16 @@ export default function ProductItem({
   const handleTap = () => {
     const now = Date.now()
     if (now - lastTap.current < 300) {
-      triggerLike()
-      setShowHeart(true)
-      setTimeout(() => setShowHeart(false), 900)
+      if (!liked) {
+        triggerLike()
+        setShowHeart(true)
+        setTimeout(() => setShowHeart(false), 900)
+      }
     }
     lastTap.current = now
   }
 
-  // ── Toggle like — écrit uniquement dans la sous-collection publique ──
+  // ── Toggle like ──
   const triggerLike = async () => {
     if (!dbReady || !db) return
     const isNowLiked = !liked
@@ -173,22 +172,29 @@ export default function ProductItem({
     // Optimistic UI
     setLiked(isNowLiked)
     setLikeAnim(true)
-    setLikeCount(c => isNowLiked ? c + 1 : c - 1)
+    setLikeCount(c => isNowLiked ? c + 1 : Math.max(0, c - 1))
     setTimeout(() => setLikeAnim(false), 400)
 
-    const visitorId = getVisitorId()
-    const myLikeRef = doc(db, 'produits', product.id, 'likes', visitorId)
+    const visitorId  = getVisitorId()
+    const myLikeRef  = doc(db, 'likes', `${product.id}_${visitorId}`)
+    const produitRef = doc(db, 'produits', product.id)
 
     try {
       if (isNowLiked) {
-        await setDoc(myLikeRef, { createdAt: serverTimestamp() })
+        await setDoc(myLikeRef, {
+          productId: product.id,
+          visitorId,
+          createdAt: serverTimestamp(),
+        })
+        await setDoc(produitRef, { likeCount: increment(1) }, { merge: true })
       } else {
         await deleteDoc(myLikeRef)
+        await setDoc(produitRef, { likeCount: increment(-1) }, { merge: true })
       }
     } catch {
-      // Rollback
+      // Rollback si erreur
       setLiked(!isNowLiked)
-      setLikeCount(c => isNowLiked ? c - 1 : c + 1)
+      setLikeCount(c => isNowLiked ? Math.max(0, c - 1) : c + 1)
     }
   }
 
@@ -204,7 +210,9 @@ export default function ProductItem({
       if (navigator.share) {
         await navigator.share(shareData)
       } else {
-        await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`)
+        await navigator.clipboard.writeText(
+          `${shareData.title}\n${shareData.text}\n${shareData.url}`
+        )
         setShared(true)
         setTimeout(() => setShared(false), 2000)
       }
@@ -215,12 +223,10 @@ export default function ProductItem({
           { createdAt: serverTimestamp(), visitorId }
         ).catch(() => {})
       }
-    } catch {
-      // silently ignore
-    }
+    } catch { /* ignore */ }
   }
 
-  // ── Swipe tactile ──
+  // ── Swipe ──
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
   }
@@ -242,30 +248,27 @@ export default function ProductItem({
     }
   }
 
-  const formatLikeCount = (n: number) => {
+  const formatCount = (n: number) => {
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
     return n.toString()
   }
 
   const buildWaMessage = () => {
-    const lines: string[] = [
+    const lines = [
       `Bonjour ! 👋`,
       ``,
-      `Je suis intéressé(e) par le produit suivant :`,
+      `Je suis intéressé(e) par :`,
       ``,
       `🛍️ *${product.nom}*`,
-      `💰 Prix : *${product.prixVente.toLocaleString('fr-FR')} FCFA*`,
+      `💰 *${product.prixVente.toLocaleString('fr-FR')} FCFA*`,
       ``,
-      `📄 Description :`,
       product.description,
     ]
-    if (product.features && product.features.length > 0) {
-      lines.push(``)
-      lines.push(`✅ Caractéristiques :`)
+    if (product.features?.length) {
+      lines.push(``, `✅ Caractéristiques :`)
       product.features.forEach(f => lines.push(`• ${f}`))
     }
-    lines.push(``)
-    lines.push(`Est-ce que ce produit est disponible ? Merci !`)
+    lines.push(``, `Est-ce disponible ? Merci !`)
     return encodeURIComponent(lines.join('\n'))
   }
 
@@ -281,9 +284,7 @@ export default function ProductItem({
           prixVente:  product.prixVente,
         }),
       })
-    } catch {
-      // silently ignore
-    }
+    } catch { /* ignore */ }
   }
 
   const waLink = `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${buildWaMessage()}`
@@ -295,16 +296,13 @@ export default function ProductItem({
       onTouchEnd={handleTouchEnd}
       onClick={handleTap}
     >
-      {/* ── BACKGROUND MEDIA ── */}
+      {/* ── MEDIA BACKGROUND ── */}
       {currentMedia.type === 'video' ? (
         <video
           ref={videoRef}
           src={currentMedia.url}
           className="absolute inset-0 w-full h-full object-cover"
-          loop
-          muted={muted}
-          playsInline
-          preload="auto"
+          loop muted={muted} playsInline preload="auto"
         />
       ) : (
         <img
@@ -314,15 +312,18 @@ export default function ProductItem({
         />
       )}
 
+      {/* Gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent via-40% to-black/85 pointer-events-none z-10" />
 
       {product.audioUrl && <audio ref={audioRef} src={product.audioUrl} loop />}
 
-      {/* ── ZONES TAP ── */}
+      {/* ── ZONES TAP GAUCHE / DROITE ── */}
       <div className="absolute inset-0 z-20 flex pointer-events-none">
-        <div className="w-1/3 h-full pointer-events-auto" onClick={e => { e.stopPropagation(); handleZoneTap('left') }} />
+        <div className="w-1/3 h-full pointer-events-auto"
+          onClick={e => { e.stopPropagation(); handleZoneTap('left') }} />
         <div className="w-1/3 h-full" />
-        <div className="w-1/3 h-full pointer-events-auto" onClick={e => { e.stopPropagation(); handleZoneTap('right') }} />
+        <div className="w-1/3 h-full pointer-events-auto"
+          onClick={e => { e.stopPropagation(); handleZoneTap('right') }} />
       </div>
 
       {/* ── PROGRESS BARS ── */}
@@ -330,7 +331,7 @@ export default function ProductItem({
         {Array.from({ length: total }).map((_, i) => (
           <div key={i} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${
+              className={`h-full rounded-full ${
                 i < currentIndex ? 'w-full bg-white' : i === currentIndex ? 'bg-white' : 'w-0'
               }`}
               style={
@@ -358,7 +359,10 @@ export default function ProductItem({
           onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
           className="w-8 h-8 rounded-full bg-black/40 backdrop-blur flex items-center justify-center border border-white/20"
         >
-          {muted ? <VolumeX size={14} className="text-white" /> : <Volume2 size={14} className="text-white" />}
+          {muted
+            ? <VolumeX size={14} className="text-white" />
+            : <Volume2 size={14} className="text-white" />
+          }
         </button>
       </div>
 
@@ -386,7 +390,10 @@ export default function ProductItem({
         >
           <div
             className="w-12 h-12 flex items-center justify-center"
-            style={{ transform: likeAnim ? 'scale(1.35)' : 'scale(1)', transition: 'transform 0.2s ease' }}
+            style={{
+              transform: likeAnim ? 'scale(1.4)' : 'scale(1)',
+              transition: 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+            }}
           >
             <Heart
               size={34}
@@ -395,12 +402,12 @@ export default function ProductItem({
               className={liked ? 'text-[#fe2c55]' : 'text-white drop-shadow'}
             />
           </div>
-          <span className="text-white text-[11px] font-semibold drop-shadow text-center w-full leading-none">
-            {formatLikeCount(likeCount)}
+          <span className="text-white text-[11px] font-semibold drop-shadow text-center w-full leading-none tabular-nums">
+            {formatCount(likeCount)}
           </span>
         </button>
 
-        {/* Partager */}
+        {/* Partage */}
         <button
           onClick={handleShare}
           className="flex flex-col items-center gap-[6px] w-12"
@@ -419,7 +426,10 @@ export default function ProductItem({
 
         {/* Disque vinyle */}
         {product.audioUrl && (
-          <div className="w-12 h-12 flex items-center justify-center animate-spin" style={{ animationDuration: '4s' }}>
+          <div
+            className="w-12 h-12 flex items-center justify-center animate-spin"
+            style={{ animationDuration: '4s' }}
+          >
             <div className="w-10 h-10 rounded-full bg-gray-900 border-4 border-gray-700 flex items-center justify-center">
               <Music2 size={13} className="text-white" />
             </div>
@@ -446,16 +456,21 @@ export default function ProductItem({
           </div>
         </div>
 
-        {product.features && product.features.length > 0 && (
+        {/* Features */}
+        {(product.features?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {product.features.slice(0, 3).map((f, i) => (
-              <span key={i} className="text-[10px] text-white/90 bg-white/15 backdrop-blur px-2 py-0.5 rounded-full border border-white/20 font-medium">
+            {product.features!.slice(0, 3).map((f, i) => (
+              <span
+                key={i}
+                className="text-[10px] text-white/90 bg-white/15 backdrop-blur px-2 py-0.5 rounded-full border border-white/20 font-medium"
+              >
                 {f}
               </span>
             ))}
           </div>
         )}
 
+        {/* Miniatures médias */}
         {allMedia.length > 1 && (
           <div className="flex gap-1.5 mb-3">
             {allMedia.map((m, i) => (
