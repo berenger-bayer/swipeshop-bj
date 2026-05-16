@@ -1,50 +1,61 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
-import { db, isConfigValid } from '@/lib/firebase'
+import { db } from '@/lib/firebase'
 import ProductFeed from '@/components/ProductFeed'
-import { Package } from 'lucide-react'
 
-interface Product {
-  id: string
-  nom: string
-  description: string
-  prixVente: number
-  videoUrl: string
-  features?: string[]
-  images?: string[]
+// Sérialise les données Firestore pour les Server Components
+// (évite l'erreur "Objects with toJSON methods are not supported")
+function serializeProduct(data: Record<string, unknown>, id: string) {
+  return {
+    id,
+    nom:         (data.nom as string)         ?? '',
+    description: (data.description as string) ?? '',
+    prixVente:   (data.prixVente as number)   ?? 0,
+    videoUrl:    (data.videoUrl as string)    ?? '',
+    audioUrl:    (data.audioUrl as string)    ?? '',
+    features:    (data.features as string[])  ?? [],
+    images:      (data.images as string[])    ?? [],
+    actif:       (data.actif as boolean)      ?? true,
+    // dateCreation est un Timestamp Firebase — on le convertit en ISO string
+    dateCreation: data.dateCreation
+      ? new Date(
+          (data.dateCreation as { seconds: number }).seconds * 1000
+        ).toISOString()
+      : null,
+  }
+}
+
+async function getSettings() {
+  if (!db) return { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
+  try {
+    const snap = await getDocs(collection(db, 'settings'))
+    if (!snap.empty) return snap.docs[0].data() as { whatsappNumber: string; shopName: string }
+  } catch {}
+  return { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
 }
 
 export default async function Home() {
-  let produits: Product[] = []
-  let whatsappNumber = '+2290155063713'
+  let produits: ReturnType<typeof serializeProduct>[] = []
+  let settings = { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
 
-  try {
-    if (isConfigValid && db) {
-      const q = query(collection(db, 'produits'), where('actif', '==', true))
-      const snap = await getDocs(q)
-      produits = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]
-
-      const sSnap = await getDocs(collection(db, 'settings'))
-      if (!sSnap.empty) {
-        whatsappNumber = sSnap.docs[0].data().whatsappNumber
-      }
+  if (db) {
+    try {
+      const [pSnap, s] = await Promise.all([
+        getDocs(query(collection(db, 'produits'), where('actif', '==', true))),
+        getSettings(),
+      ])
+      produits = pSnap.docs.map(d => serializeProduct(d.data(), d.id))
+      settings = s
+    } catch (err) {
+      console.error('Error fetching data from Firebase:', err)
     }
-  } catch (error) {
-    console.error("Error fetching data from Firebase:", error)
   }
 
   return (
-    <main className="h-screen w-full">
-      {produits.length > 0 ? (
-        <ProductFeed produits={produits} whatsappNumber={whatsappNumber} />
-      ) : (
-        <div className="h-screen w-full bg-background flex flex-col items-center justify-center p-4 text-center">
-          <div className="w-16 h-16 bg-accent-indigo/10 rounded-2xl flex items-center justify-center mb-6">
-            <Package className="text-accent-indigo" size={32} />
-          </div>
-          <h1 className="text-2xl font-black text-foreground mb-2">Boutique en maintenance</h1>
-          <p className="text-card-text-muted max-w-xs">Nous préparons de nouveaux produits pour vous. Reviens très vite !</p>
-        </div>
-      )}
+    <main className="w-full h-screen overflow-hidden bg-black">
+      <ProductFeed
+        produits={produits}
+        whatsappNumber={settings.whatsappNumber}
+      />
     </main>
   )
 }
