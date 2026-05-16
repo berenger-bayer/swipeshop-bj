@@ -1,7 +1,7 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
+import { initializeApp, getApps, getApp } from "firebase/app"
+import { getFirestore } from "firebase/firestore"
+import { getAuth } from "firebase/auth"
+import { getStorage } from "firebase/storage"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -10,17 +10,14 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
+}
 
-const isConfigValid = !!firebaseConfig.apiKey;
+export const isConfigValid = !!firebaseConfig.apiKey
 
-// Initialize Firebase
-const app = isConfigValid 
-  ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
-  : null;
+const app = isConfigValid
+  ? getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
+  : null
 
-const db = app ? getFirestore(app) : null;
-const auth = app ? getAuth(app) : null;
-const storage = app ? getStorage(app) : null;
-
-export { db, auth, storage, isConfigValid };
+export const db     = app ? getFirestore(app) : null
+export const auth   = app ? getAuth(app) : null
+export const storage = app ? getStorage(app) : null

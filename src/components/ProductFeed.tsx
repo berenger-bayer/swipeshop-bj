@@ -26,6 +26,14 @@ export default function ProductFeed({ produits, whatsappNumber }: ProductFeedPro
   const activeProduct = produits[activeIndex]
 
   useEffect(() => {
+    // Lock body scroll when feed is active to maintain TikTok feel
+    document.body.style.overflow = 'hidden'
+    return () => {
+        document.body.style.overflow = 'auto'
+    }
+  }, [])
+
+  useEffect(() => {
     const observer = new IntersectionObserver(
       entries => {
         entries.forEach(e => {

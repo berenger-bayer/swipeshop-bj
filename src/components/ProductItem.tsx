@@ -40,30 +40,60 @@ export default function ProductItem({ product, whatsappNumber, isActive }: Produ
 
   return (
     <div className="h-full w-full snap-start relative flex flex-col bg-black overflow-hidden group">
-      {/* Background Video (TikTok Immersive) */}
-      <video
-        src={product.videoUrl}
-        className="absolute inset-0 w-full h-full object-cover"
-        loop
-        muted
-        playsInline
-        autoPlay={isActive}
-      />
+      {/* Top Story Progress Bars (Visual only for now) */}
+      <div className="absolute top-4 inset-x-4 flex space-x-1.5 z-30">
+        {[1, 2].map((i) => (
+            <div key={i} className="h-1 flex-grow bg-white/20 rounded-full overflow-hidden">
+                <div 
+                    className={`h-full bg-white transition-all duration-[5000ms] ease-linear ${isActive && i === 1 ? 'w-full' : 'w-0'}`} 
+                />
+            </div>
+        ))}
+      </div>
+
+      {/* Background Media (Story Style Split) */}
+      <div className="absolute inset-0 flex flex-row">
+        {/* Left Side: Video */}
+        <div className="relative w-1/2 h-full overflow-hidden border-r border-white/10">
+            <video
+                src={product.videoUrl}
+                className="absolute inset-0 w-full h-full object-cover"
+                loop
+                muted
+                playsInline
+                autoPlay={isActive}
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40" />
+        </div>
+        
+        {/* Right Side: Image (Story Style) */}
+        <div className="relative w-1/2 h-full overflow-hidden">
+            {product.images && product.images.length > 0 ? (
+                <img 
+                    src={product.images[0]} 
+                    alt={product.nom}
+                    className="absolute inset-0 w-full h-full object-cover animate-fade-in"
+                />
+            ) : (
+                <div className="w-full h-full bg-gradient-to-br from-indigo-900 to-purple-900 flex items-center justify-center">
+                    <Music2 className="text-white/20" size={48} />
+                </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40" />
+        </div>
+      </div>
       
       {/* Background Audio */}
       {product.audioUrl && (
         <audio ref={audioRef} src={product.audioUrl} loop />
       )}
 
-      {/* Subtle Bottom Gradient (TikTok Style) */}
-      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent z-10 pointer-events-none" />
-
       {/* Right Interaction Bar (Strict TikTok Style) */}
       <div className="absolute right-3 bottom-24 flex flex-col items-center space-y-5 z-20">
         {/* Profile / Shop Icon */}
         <div className="flex flex-col items-center mb-2">
             <div className="w-12 h-12 bg-white rounded-full p-[1px] relative shadow-lg">
-                <div className="w-full h-full rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs italic">SS</div>
+                <div className="w-full h-full rounded-full bg-accent-indigo flex items-center justify-center text-white font-bold text-xs italic">SS</div>
                 <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#fe2c55] text-white rounded-full p-0.5 shadow-lg border-2 border-black/10">
                     <Plus size={12} strokeWidth={4} />
                 </div>
@@ -114,7 +144,7 @@ export default function ProductItem({ product, whatsappNumber, isActive }: Produ
         <div className="flex items-center space-x-2 bg-black/30 backdrop-blur-md p-1.5 px-3 rounded-full border border-white/10 max-w-[200px] overflow-hidden">
             <Music2 size={12} className="text-white shrink-0" />
             <div className="text-[11px] text-white whitespace-nowrap animate-marquee font-medium">
-                {product.audioUrl ? 'Son original - SwipeShop Bénin • Ambiance Zen' : 'Audio désactivé'}
+                {product.audioUrl ? 'Son original - SwipeShop Bénin' : 'Audio désactivé'}
             </div>
         </div>
 
