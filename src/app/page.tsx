@@ -1,3 +1,4 @@
+"use client"
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import ProductFeed from '@/components/ProductFeed'
@@ -25,7 +26,7 @@ function serializeProduct(data: Record<string, unknown>, id: string) {
 }
 
 async function getSettings() {
-  if (!db) return { whatsappNumber: '+22900000000', shopName: 'SwipeShop Bénin' }
+  if (!db) return { whatsappNumber: '+2290155063713', shopName: 'SwipeShop Bénin' }
   try {
     const snap = await getDocs(collection(db, 'settings'))
     if (!snap.empty) return snap.docs[0].data() as { whatsappNumber: string; shopName: string }
